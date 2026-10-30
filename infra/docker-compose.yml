@@ -1,0 +1,138 @@
+# Kibaré — pile complète. Propriétaire : Cédric.
+# Seul le port 443 de Caddy est publié. Tous les autres services sont sur le réseau
+# « interne », qui n'a aucune route vers l'extérieur.
+# TODO avant v1.0 : figer chaque image par empreinte (make pin-images).
+
+name: kibare
+
+x-durci: &durci
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks: [interne]
+
+services:
+  # Conteneur à usage unique : génère les secrets (une seule fois) et rend les configurations.
+  init:
+    image: python:3.13-alpine
+    command: ["python", "/init/init.py"]
+    environment:
+      KIBARE_DOMAINE: ${KIBARE_DOMAINE:-kibare.internal}
+      KIBARE_PROFIL: ${KIBARE_PROFIL:-production}
+    volumes:
+      - ./init:/init:ro
+      - ./.secrets:/secrets          # secrets générés, persistants, ignorés par git
+      - run-kibare:/run/kibare       # configurations rendues, lues par les autres services
+      - synapse-data:/vol/synapse    # pour donner le volume à l'utilisateur synapse (991)
+    network_mode: none               # aucun besoin de réseau
+    restart: "no"
+
+  postgres:
+    <<: *durci
+    image: postgres:18.6-alpine
+    user: "70:70"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/kibare/postgres/superuser
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - run-kibare:/run/kibare:ro
+      - ./postgres/01-bases.sh:/docker-entrypoint-initdb.d/01-bases.sh:ro
+    depends_on:
+      init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 20
+
+  keycloak:
+    <<: *durci
+    image: quay.io/keycloak/keycloak:26.8.1
+    # Les secrets sont chargés depuis le fichier rendu par init, puis le royaume est importé.
+    entrypoint: ["/bin/bash", "-c", "set -a && . /run/kibare/keycloak/keycloak.env && set +a && exec /opt/keycloak/bin/kc.sh start --import-realm"]
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_HOSTNAME: https://auth.${KIBARE_DOMAINE:-kibare.internal}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"   # Synapse parle à Keycloak en interne
+      KC_HTTP_ENABLED: "true"                   # TLS terminé par Caddy
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      KC_FEATURES_DISABLED: "impersonation"
+    volumes:
+      - run-kibare:/run/kibare:ro
+      - ../console/keycloak:/opt/keycloak/data/import:ro   # royaume livré par Prisca
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  synapse:
+    <<: *durci
+    image: matrixdotorg/synapse:v1.164.1
+    # 1) génère la clé de signature du serveur si elle manque ; 2) démarre Synapse.
+    entrypoint: ["/bin/sh", "-c", "python -m synapse.app.homeserver -c /run/kibare/synapse/homeserver.yaml --generate-keys && exec python -m synapse.app.homeserver -c /run/kibare/synapse/homeserver.yaml"]
+    user: "991:991"
+    environment:
+      PYTHONPATH: /modules
+    volumes:
+      - synapse-data:/data
+      - run-kibare:/run/kibare:ro
+      - ./synapse/modules:/modules:ro
+      - ./synapse/log.config:/config/log.config:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+      keycloak: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8008/health"]
+      interval: 5s
+      retries: 30
+
+  # Crée le compte de service admin Synapse utilisé par l'API console (révocation, annuaire).
+  bootstrap:
+    image: postgres:18.6-alpine
+    command: ["/bin/sh", "/scripts/bootstrap.sh"]
+    volumes:
+      - run-kibare:/run/kibare:ro
+      - ./scripts/bootstrap.sh:/scripts/bootstrap.sh:ro
+    networks: [interne]
+    depends_on:
+      synapse: { condition: service_healthy }
+    restart: "no"
+
+  console:
+    <<: *durci
+    profiles: ["console"]            # activé par le Makefile dès que console/Dockerfile existe
+    build: ../console
+    env_file: [.secrets/console.env]
+    depends_on:
+      postgres: { condition: service_healthy }
+      bootstrap: { condition: service_completed_successfully }
+
+  caddy:
+    <<: *durci
+    image: caddy:2.11.7-alpine
+    ports:
+      - "443:443"
+    environment:
+      KIBARE_DOMAINE: ${KIBARE_DOMAINE:-kibare.internal}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../client/webapp:/srv/client:ro      # build d'Element (Aman)
+      - caddy-data:/data                     # autorité de certification interne
+    networks: [public, interne]
+    depends_on:
+      synapse: { condition: service_healthy }
+
+networks:
+  interne:
+    internal: true                   # aucune route sortante
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24      # fixé : Synapse n'autorise ses appels HTTP qu'ici
+  public: {}
+
+volumes:
+  pgdata:
+  synapse-data:
+  caddy-data:
+  run-kibare:

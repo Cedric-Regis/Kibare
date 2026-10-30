@@ -1,0 +1,125 @@
+# Synapse — Kibaré. Rendu par init.py ($$ = dollar littéral). NE PAS éditer le fichier rendu.
+server_name: "$domaine"
+public_baseurl: "https://$domaine/"
+pid_file: /data/homeserver.pid
+signing_key_path: /data/signing.key
+media_store_path: /data/media_store
+log_config: /config/log.config
+report_stats: false
+
+listeners:
+  - port: 8008
+    type: http
+    tls: false
+    x_forwarded: true
+    bind_addresses: ["0.0.0.0"]
+    resources:
+      - names: [client]          # pas de « federation » : aucun autre serveur ne nous parle
+        compress: false
+
+database:
+  name: psycopg2
+  args:
+    user: synapse
+    password: "$pg_synapse"
+    dbname: synapse
+    host: postgres
+    port: 5432
+    cp_min: 5
+    cp_max: 10
+
+macaroon_secret_key: "$synapse_macaroon"
+form_secret: "$synapse_form"
+
+# --- Identité : uniquement Keycloak, uniquement les agents enrôlés ---------------------
+enable_registration: false
+allow_guest_access: false
+password_config:
+  enabled: false                 # aucune connexion par mot de passe Matrix
+enable_3pid_changes: false
+enable_set_displayname: false    # le nom vient de Keycloak (annuaire)
+enable_set_avatar_url: false
+
+sso:
+  client_whitelist: ["https://$domaine/"]
+  update_profile_information: true   # nom d'affichage resynchronisé à chaque connexion
+
+oidc_providers:
+  - idp_id: keycloak
+    idp_name: "Kibaré"
+    discover: false
+    # Navigateur → adresse publique ; Synapse → adresse interne (aucun TLS à faire confiance).
+    # skip_verification saute UNIQUEMENT le contrôle « endpoints en https » des métadonnées
+    # (Keycloak est joint en http sur le réseau interne isolé, comme Synapse par Caddy).
+    # La signature de l'ID token reste vérifiée avec jwks_uri.
+    skip_verification: true
+    issuer: "https://auth.$domaine/realms/kibare"
+    authorization_endpoint: "https://auth.$domaine/realms/kibare/protocol/openid-connect/auth"
+    token_endpoint: "http://keycloak:8080/realms/kibare/protocol/openid-connect/token"
+    userinfo_endpoint: "http://keycloak:8080/realms/kibare/protocol/openid-connect/userinfo"
+    jwks_uri: "http://keycloak:8080/realms/kibare/protocol/openid-connect/certs"
+    client_id: synapse
+    client_secret: "$synapse_oidc"
+    client_auth_method: client_secret_post
+    scopes: ["openid", "profile"]
+    pkce_method: always
+    backchannel_logout_enabled: true    # révocation : Keycloak ferme les sessions Matrix
+    # C'est CETTE ligne qui bloque l'intrus : un compte Keycloak non enrôlé est rejeté.
+    attribute_requirements:
+      - attribute: kibare_enrolled
+        value: "true"
+    allow_existing_users: false
+    user_mapping_provider:
+      config:
+        localpart_template: "{{ user.preferred_username }}"
+        display_name_template: "{{ user.name }} · {{ user.fonction }} · {{ user.ministere }}"
+        confirm_localpart: false
+
+# --- Fédération et dépendances externes : tout fermé -----------------------------------
+federation_domain_whitelist: []
+trusted_key_servers: []
+suppress_key_server_warning: true
+allow_public_rooms_over_federation: false
+allow_public_rooms_without_auth: false
+room_list_publication_rules:
+  - action: deny
+# Synapse n'appelle en HTTP que le réseau interne (module → API console).
+ip_range_whitelist: ["172.30.0.0/24"]
+
+# --- Chiffrement et confidentialité -----------------------------------------------------
+encryption_enabled_by_default_for_room_type: all
+presence:
+  enabled: false
+url_preview_enabled: false
+push:
+  enabled: false
+include_profile_data_on_invite: false
+require_auth_for_profile_requests: true
+limit_profile_requests_to_users_who_share_rooms: true
+user_directory:
+  enabled: true
+  search_all_users: true         # annuaire interne : tous les agents enrôlés
+  prefer_local_users: true
+enable_media_repo: true
+max_upload_size: 50M
+dynamic_thumbnails: false        # médias chiffrés : rien à miniaturiser
+enable_metrics: false
+limit_remote_rooms:
+  enabled: true
+  complexity: 0.1
+
+# Rétention : le serveur supprime les événements expirés (m.room.retention, par niveau).
+retention:
+  enabled: true
+  purge_jobs:
+    - interval: 1h
+
+# Compte de service admin pour l'API console (révocation, annuaire). Accès interne seulement :
+# Caddy bloque /_synapse/admin.
+app_service_config_files:
+  - /run/kibare/synapse/console-appservice.yaml
+
+modules:
+  - module: kibare_zero_clair.ZeroClair
+    config:
+      url_role: "http://console:8000/interne/role"
