@@ -1,0 +1,66 @@
+# Caddy — seul point d'entrée de Kibaré (port 443). Propriétaire : Cédric.
+{
+	admin off
+	auto_https disable_redirects     # seul le port 443 est publié
+	skip_install_trust
+	servers {
+		protocols h1 h2
+	}
+}
+
+(securite) {
+	tls internal                       # autorité de certification interne : aucune ACME, aucun appel externe
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+}
+
+{$KIBARE_DOMAINE} {
+	import securite
+
+	@upload_en_clair {
+		path_regexp ^/_matrix/(media|client)/[^/]+/(media/)?upload
+		not header Content-Type application/octet-stream
+	}
+	@matrix path /_matrix/* /_synapse/client/*
+
+	# « route » impose l'ordre écrit : sans lui, Caddy trie les directives et le proxy
+	# passerait AVANT les refus ci-dessous (trou trouvé par tests/securite/test_pile.sh).
+	route {
+		# Routes interdites depuis l'extérieur : API admin de Synapse, fédération, serveur de clés.
+		respond /_synapse/admin* 404
+		respond /_matrix/federation* 404
+		respond /_matrix/key* 404
+
+		# R4 : un fichier n'est accepté que chiffré par le client (application/octet-stream).
+		respond @upload_en_clair "Seuls les fichiers chiffrés sont acceptés" 415
+
+		reverse_proxy @matrix synapse:8008
+
+		header X-Frame-Options DENY
+		root * /srv/client
+		file_server
+	}
+}
+
+auth.{$KIBARE_DOMAINE} {
+	import securite
+	# La console d'administration Keycloak n'est jamais exposée (l'API console passe en interne).
+	route {
+		respond /admin* 404
+		respond /realms/master* 404
+		reverse_proxy keycloak:8080
+	}
+}
+
+console.{$KIBARE_DOMAINE} {
+	import securite
+	route {
+		respond /interne* 404          # réservé au module Synapse, réseau interne seulement
+		reverse_proxy console:8000
+	}
+}

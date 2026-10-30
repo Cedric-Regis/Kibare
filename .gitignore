@@ -1,0 +1,21 @@
+# Secrets : jamais dans le dépôt
+.env
+*.env
+!infra/.env.example
+infra/.secrets/
+*.pem
+*.key
+
+# Artefacts
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+client/webapp/
+infra/images/
+*.pcap
+.DS_Store
+
+# Documents internes à l'équipe (noms, planning) : jamais dans le dépôt public
+charge.pdf
+.vscode/
