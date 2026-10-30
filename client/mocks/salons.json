@@ -1,0 +1,29 @@
+{
+  "!demo-nc:kibare.internal": {
+    "room_id": "!demo-nc:kibare.internal",
+    "niveau": "nc",
+    "libelle": "Non classifié",
+    "transfert_permis": true,
+    "filigrane": false,
+    "retention_secondes": null,
+    "retention_jours": null
+  },
+  "!demo-dr:kibare.internal": {
+    "room_id": "!demo-dr:kibare.internal",
+    "niveau": "dr",
+    "libelle": "Diffusion restreinte",
+    "transfert_permis": false,
+    "filigrane": false,
+    "retention_secondes": 2592000,
+    "retention_jours": 30
+  },
+  "!demo-conf:kibare.internal": {
+    "room_id": "!demo-conf:kibare.internal",
+    "niveau": "confidentiel",
+    "libelle": "Confidentiel",
+    "transfert_permis": false,
+    "filigrane": true,
+    "retention_secondes": 604800,
+    "retention_jours": 7
+  }
+}

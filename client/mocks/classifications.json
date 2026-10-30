@@ -1,0 +1,28 @@
+{
+  "niveaux": [
+    {
+      "niveau": "nc",
+      "libelle": "Non classifié",
+      "transfert_permis": true,
+      "filigrane": false,
+      "retention_secondes": null,
+      "retention_jours": null
+    },
+    {
+      "niveau": "dr",
+      "libelle": "Diffusion restreinte",
+      "transfert_permis": false,
+      "filigrane": false,
+      "retention_secondes": 2592000,
+      "retention_jours": 30
+    },
+    {
+      "niveau": "confidentiel",
+      "libelle": "Confidentiel",
+      "transfert_permis": false,
+      "filigrane": true,
+      "retention_secondes": 604800,
+      "retention_jours": 7
+    }
+  ]
+}

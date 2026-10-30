@@ -1,0 +1,13 @@
+{
+  "agents": [
+    { "nom": "Awa OUÉDRAOGO",   "fonction": "Chargée de mission",        "ministere": "MTDPCE" },
+    { "nom": "Boureima SAWADOGO","fonction": "Ingénieur réseaux",        "ministere": "MTDPCE" },
+    { "nom": "Fatimata ZONGO",  "fonction": "Cheffe de service",         "ministere": "MTDPCE" },
+    { "nom": "Issouf KONATÉ",   "fonction": "Archiviste",                "ministere": "MINEFID" },
+    { "nom": "Mariam TRAORÉ",   "fonction": "Contrôleuse budgétaire",    "ministere": "MINEFID" },
+    { "nom": "Salif BATIONO",   "fonction": "Médecin-chef",              "ministere": "MSHP" },
+    { "nom": "Pélagie KABORÉ",  "fonction": "Secrétaire générale",       "ministere": "MSHP" },
+    { "nom": "Rasmané ILBOUDO", "fonction": "Enseignant-chercheur",      "ministere": "MESRS" }
+  ],
+  "total": 8
+}
